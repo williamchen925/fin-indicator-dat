@@ -17,17 +17,20 @@ SHARES_OUTSTANDING = 224440000
 st.title("🚀 Digital Asset Treasury (DAT.co) 監測平台")
 st.markdown("本系統監控 **MicroStrategy (MSTR)** 的溢價率，作為比特幣市場情緒指標。")
 
-# --- 3. 獲取數據 ---
-# --- 3. 獲取數據 (更穩定的寫法) ---
-@st.cache_data(ttl=600) # 縮短快取時間，方便重試
+# --- 3. 獲取數據 (對齊強化版) ---
+@st.cache_data(ttl=600)
 def fetch_financial_data():
     try:
+        # 抓取稍微長一點的時間，確保有足夠重疊的日期
         mstr_obj = yf.Ticker("MSTR")
         btc_obj = yf.Ticker("BTC-USD")
         
-        # 抓取數據並處理多層索引問題
         mstr = mstr_obj.history(period="1y")
         btc = btc_obj.history(period="1y")
+        
+        # 移除時區資訊，避免對齊失敗
+        mstr.index = mstr.index.tz_localize(None)
+        btc.index = btc.index.tz_localize(None)
         
         return mstr, btc
     except Exception as e:
@@ -36,15 +39,17 @@ def fetch_financial_data():
 
 mstr_raw, btc_raw = fetch_financial_data()
 
-# --- 檢查數據是否有效 ---
 if mstr_raw.empty or btc_raw.empty:
-    st.warning("⚠️ 目前 Yahoo Finance API 流量受限，請稍候 1-2 分鐘後重新整理網頁。")
-    st.info("這通常是因為雲端伺服器 (Streamlit Cloud) 的 IP 被暫時限制，不影響程式邏輯。")
+    st.warning("⚠️ API 目前沒抓到資料，請點擊右上角 Rerun 重試。")
 else:
-    # 數據對齊處理
-    df = pd.DataFrame()
+    # 關鍵：建立一個以 MSTR (股市開盤日) 為主的 DataFrame
+    df = pd.DataFrame(index=mstr_raw.index)
     df['MSTR_Price'] = mstr_raw['Close']
+    
+    # 將 BTC 價格對齊到 MSTR 的日期上
     df['BTC_Price'] = btc_raw['Close']
+    
+    # 剔除任何空值 (例如 MSTR 沒開盤的日子)
     df = df.dropna()
 
     if not df.empty:
@@ -54,19 +59,23 @@ else:
 
         # --- 4. UI 視覺化 ---
         c1, c2, c3 = st.columns(3)
-        c1.metric("MSTR Price", f"${df['MSTR_Price'].iloc[-1]:.2f}")
-        c2.metric("BTC Price", f"${df['BTC_Price'].iloc[-1]:,.0f}")
-        c3.metric("Current Premium", f"{df['Premium_Pct'].iloc[-1]:.2f}%")
+        # 使用 iloc[-1] 之前先確認真的有資料
+        latest_mstr = df['MSTR_Price'].iloc[-1]
+        latest_btc = df['BTC_Price'].iloc[-1]
+        latest_premium = df['Premium_Pct'].iloc[-1]
 
-        # 繪圖
+        c1.metric("MSTR Price", f"${latest_mstr:.2f}")
+        c2.metric("BTC Price", f"${latest_btc:,.0f}")
+        c3.metric("Current Premium", f"{latest_premium:.2f}%")
+
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df.index, y=df['Premium_Pct'], mode='lines', name='Premium %', line=dict(color='#00ffcc')))
         fig.update_layout(title="MSTR Premium to NAV Tracker", template="plotly_dark")
         st.plotly_chart(fig, width='stretch')
         
-        # ... (後續 AI 部分保持不變)
+        # ... (後續 AI 部分)
     else:
-        st.error("數據對齊後為空，請檢查日期範圍。")
+        st.error("❌ 數據對齊失敗：請檢查 MSTR 與 BTC 的日期是否有重疊。")
 
 try:
     mstr_raw, btc_raw = fetch_financial_data()
