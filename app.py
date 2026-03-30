@@ -20,9 +20,13 @@ st.markdown("本系統監控 **MicroStrategy (MSTR)** 的溢價率，作為比�
 # --- 3. 獲取數據 ---
 @st.cache_data(ttl=3600)
 def fetch_financial_data():
-    # 抓取 MSTR 和 BTC 數據
-    mstr = yf.download("MSTR", period="1y", interval="1d")
-    btc = yf.download("BTC-USD", period="1y", interval="1d")
+    # 使用 Ticker 方式通常比較穩定
+    mstr_ticker = yf.Ticker("MSTR")
+    btc_ticker = yf.Ticker("BTC-USD")
+
+    mstr = mstr_ticker.history(period="1y")
+    btc = btc_ticker.history(period="1y")
+
     return mstr, btc
 
 try:
